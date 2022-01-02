@@ -5,6 +5,9 @@ import Data.Char
 import Data.List
 import Data.Maybe
 import Data.Ord
+import GHC.IO.Exception
+import GHC.IO.Handle
+import System.Process
 
 wordlist = "dictionary.txt"
 
@@ -122,3 +125,10 @@ main = do
             if status == "solved" then return () else solve s2
     solve M.empty
 
+-- terrible IPC code begins here
+
+shellcommand cmd = do
+    (_, Just stdout_h, _, ph) <- createProcess $ (shell cmd) { std_out = CreatePipe }
+    code <- waitForProcess ph
+    when (code /= ExitSuccess) $ error $ "command '" ++ cmd ++ "' failed: " ++ show code
+    return $ hGetContents stdout_h
