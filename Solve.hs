@@ -97,37 +97,6 @@ update state checker word = finalize $ foldl checkletter (state,"") $ zip [0..] 
                               n = length word - 1
                     promote x = x
 
--- ^^^ secret-blind code ^^^  vvv secret-aware code for automatic mode vvv
-
-checkknown secret i w | secret !! i == w = 2
-checkknown secret _ w | elem w secret = 1
-checkknown secret _ _ = 0
-
--- TODO: debug 'sentimentalisms' non termination
--- it's also obviously a case where 3 helps instead of 2
--- but the actual problem is that 'e' is green elsewhere in the world,
--- so the knowledge of it yellow in 2nd to last place doesn't get to contribute to progress
--- you probably don't have to fully solve the duplicate-letters problem to fix this
-main2 = do
-    putStrLn "input secret word:"
-    (secret:feedback) <- lines <$> getContents
-    --
-    dict <- filter (all isLower) <$> lines <$> readFile wordlist
-    when (not $ elem secret dict) $ error $ c_k ++ "secret word is too secret for gcc" ++ c_x
-    putStrLn $ "secret: " ++ map toUpper secret
-    let words = filter ((== length secret) . length) dict
-    --
-    let solve s = do
-            let (ans, answers) = guess words s
-            let (s2, msg) = update s (checkknown secret) ans
-            let status = if ans == fst (guess words s2) then "solved" else "trying"
-            putStrLn $ status ++ ": " ++ msg ++ " " ++
-                if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
-                else show $ map nub $ transpose answers
-            when (status == "solved" && ans /= secret) $ error "shit, i got stuck"
-            if status == "solved" then return () else solve s2
-    solve M.empty
-
 -- terrible IPC code to the browser begins here
 
 shellcommand cmd = do
