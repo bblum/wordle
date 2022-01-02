@@ -38,7 +38,9 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
                               unknownsprobed = count unknown $ nub word
                               frequencies = sum $ map (fromMaybe 0 . flip lookup freqs) $ nub word
                     unknowncol (c, c2s) = length c2s > 1 && elem c c2s
-                    -- TODO: don't count if it is moved to where someone *else* is green
+                    yellowmoved (i, (c, _)) | any othergreen $ M.assocs state = False
+                        where othergreen (c2, At l) = c /= c2 && elem i l
+                              othergreen _ = False
                     yellowmoved (i, (_, Just (NotAt l))) = not $ elem i l
                     yellowmoved _ = False
                     freqs = map (head &&& length) $ group $ filter unknown $ sort $ concat answers
