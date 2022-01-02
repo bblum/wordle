@@ -86,6 +86,7 @@ update state checker word = finalize $ foldl checkletter (state,"") $ zip [0..] 
               where mkyellow (Just (At l)) = Just $ At l -- don't downgrade better info
                     mkyellow (Just (NotAt l)) = Just $ NotAt $ nub $ sort $ i:l
                     mkyellow Nothing = Just $ NotAt [i]
+          checkletter' (state,msg) (_,w,0) | M.member w state = (state, msg ++ c_k ++ [w]) -- same
           checkletter' (state,msg) (_,w,0) = (M.insert w Absent state, msg ++ c_k ++ [w])
           finalize (state,msg) = (M.map promote state, msg ++ c_x)
               where greens = M.foldr (\x gs -> case x of At l -> l ++ gs; _ -> gs) [] state
