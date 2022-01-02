@@ -70,18 +70,24 @@ c_k = "\27[01;31m"
 
 -- TODO: rewrite this to interact with the website with just colors
 -- TODO: foldl collect a string of colors and pretty print them
-update state secret word = fmap (++ c_x) $ foldl checkletter (state,"") $ zip3 [0..] secret word
+update state secret word = finalize $ foldl checkletter (state,"") $ zip3 [0..] secret word
     -- TODO: consume letters in 'secret' when computing yellows (not that it matters here?)
     where checkletter (state,msg) (i,s,w) | s == w = (M.alter mkgreen w state, msg ++ c_g ++ [w])
               where mkgreen (Just (At l)) = Just $ At $ nub $ sort $ i:l
                     mkgreen _ = Just $ At [i]
           checkletter (state,msg) (i,_,w) | elem w secret = (M.alter mkyellow w state, msg ++ c_y ++ [w])
               where mkyellow (Just (At l)) = Just $ At l -- don't downgrade better info
-                    -- when we have all but 1 position yellow, we could promote it to a green
-                    -- but that probably never matters since we solve too fast already
                     mkyellow (Just (NotAt l)) = Just $ NotAt $ nub $ sort $ i:l
                     mkyellow Nothing = Just $ NotAt [i]
           checkletter (state,msg) (_,_,w) = (M.insert w Absent state, msg ++ c_k ++ [w])
+          finalize (state,msg) = (M.map promote state, msg ++ c_x)
+              where greens = M.foldr (\x gs -> case x of At l -> l ++ gs; _ -> gs) [] state
+                    -- when all but 1 position is yellow (or other green), process of elim it
+                    -- this is most helpful for ~6ish letter words, often saving 1-2 guesses
+                    promote (NotAt l) | length notats == n = At $ [0..n] \\ notats
+                        where notats = nub $ l ++ greens
+                              n = length word - 1
+                    promote x = x
 
 main = do
     putStrLn "input secret word:"
