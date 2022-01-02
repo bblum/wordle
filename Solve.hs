@@ -108,7 +108,7 @@ checkknown secret _ _ = 0
 -- but the actual problem is that 'e' is green elsewhere in the world,
 -- so the knowledge of it yellow in 2nd to last place doesn't get to contribute to progress
 -- you probably don't have to fully solve the duplicate-letters problem to fix this
-main = do
+main2 = do
     putStrLn "input secret word:"
     (secret:feedback) <- lines <$> getContents
     --
@@ -162,20 +162,16 @@ parserowresults n html = parserow <$> nthrow (splitOn "<div class=\"Row Row-lock
           parsecol ["<div class=\"Row-letter letter-correct\"",[c]] = (c,2)
           parsecol col = error $ "unexpected parse: " ++ concat col
 
-play dict wordlength = do
-    let words = filter ((== wordlength) . length) dict
+playone words wordlength = do
     --
     let solve s rownum = do
             let (ans, answers) = guess words s
             -- TODO: solve race condition if num letters changes here
             -- maybe: if backoff fails, then send backspaces and start over
             -- type attempt into the browser
-            putStrLn $ "asdf typing: " ++ ans
             shellcommand $ "./glue.sh " ++ ans
             -- read the row feedback from the webpage
-            putStrLn $ "asdf getting result"
             (parsedans, feedback) <- withbackoff (parserowresults rownum) "pbpaste"
-            putStrLn $ "asdf got result: " ++ show (parsedans, feedback)
             when (parsedans /= ans) $ error $ "parsed ans different: " ++ ans ++ " " ++ parsedans
             -- update internal knowledge
             let (s2, msg) = update s (\i _ -> feedback !! i) ans
@@ -186,11 +182,16 @@ play dict wordlength = do
             if status == "solved" then return () else solve s2 $ rownum + 1
     solve M.empty 0
 
-main2 = do
+playmany words wordlength = do
+    putStrLn "================"
+    playone words wordlength
+    threadDelay $ 400 * 1000 -- just for legibility
+    shellcommand $ "./glue.sh \"\""
+    playmany words wordlength
+
+main = do
     dict <- filter (all isLower) <$> lines <$> readFile wordlist
-    -- TODO make this a loop :)
     wordlength <- withbackoff parsewordlength "pbpaste"
-    putStrLn $ "word length is " ++ show wordlength
+    let words = filter ((== wordlength) . length) dict
     threadDelay $ 1000 * 1000
-    putStrLn $ "ok going for it"
-    play dict wordlength
+    playmany words wordlength
