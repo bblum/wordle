@@ -6,7 +6,7 @@ import Data.List
 import Data.Maybe
 import Data.Ord
 
-wordlist = "/usr/share/dict/words"
+wordlist = "dictionary.txt"
 
 -- TODO: account for when there are multiple of a letter, so At and NotAt state are both relevant
 data LetterState = Absent | NotAt [Int] | At [Int] deriving (Eq, Show)
