@@ -33,6 +33,9 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
               where info word = (cols, (1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
                         where cols = count unknowncol $ zip word $ map nub $ transpose answers
                               yellowsmoved = count yellowmoved $ zip [0..] $ map query word
+                              -- TODO: check if this actually does anything
+                              -- TODO: use a stress test :)
+                              -- because i think the 'cols' metric probably subsumes it
                               unknownsprobed = if doneprobing then 0 else count unknown $ nub word
                               doneprobing = length knownletters == length word
                               frequencies = sum $ map (fromMaybe 0 . flip lookup freqs) $ nub word
@@ -46,28 +49,33 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
                     unknown c = M.notMember c state
                     count f = length . filter f
 
+c_x = "\27[00m"
+c_g = "\27[01;32m"
+c_y = "\27[01;33m"
+c_k = "\27[00;31m"
+
 -- TODO: maybe you can analyze adjacency patterns in the dictionary to rule stuff out
 -- like q -> u
 -- then again maybe too niche to be worth the LOC
 
 -- TODO: rewrite this to interact with the website with just colors
 -- TODO: foldl collect a string of colors and pretty print them
-update state secret word = foldl checkletter state $ zip3 [0..] secret word
+update state secret word = fmap (++ c_x) $ foldl checkletter (state,"") $ zip3 [0..] secret word
     -- TODO: consume letters in 'secret' when computing yellows (not that it matters here?)
-    where checkletter state (i,s,w) | s == w = M.alter mkgreen w state
+    where checkletter (state,msg) (i,s,w) | s == w = (M.alter mkgreen w state, msg ++ c_g ++ [w])
               where mkgreen (Just (At l)) = Just $ At $ nub $ sort $ i:l
                     mkgreen (Just Absent) = error "fuck, letter reappeared 1"
                     mkgreen _ = Just $ At [i]
-          checkletter state (i,_,w) | elem w secret = M.alter mkyellow w state
+          checkletter (state,msg) (i,_,w) | elem w secret = (M.alter mkyellow w state, msg ++ c_y ++ [w])
               where mkyellow (Just (At l)) = Just $ At l -- don't downgrade better info
                     -- when we have all but 1 position yellow, we could promote it to a green
                     -- but that probably never matters since we solve too fast already
                     mkyellow (Just (NotAt l)) = Just $ NotAt $ nub $ sort $ i:l
                     mkyellow (Just Absent) = error "fuck, letter reappeared 2"
                     mkyellow Nothing = Just $ NotAt [i]
-          checkletter state (_,_,w) | M.lookup w state == Just Absent = state -- ok
-          checkletter state (_,_,w) | isJust $ M.lookup w state = error "fuck, letter vanished"
-          checkletter state (_,_,w) = M.insert w Absent state
+          checkletter (state,msg) (_,_,w) | M.lookup w state == Just Absent = (state, msg ++ c_k ++ [w])
+          checkletter (state,_) (_,_,w) | isJust $ M.lookup w state = error "fuck, letter vanished"
+          checkletter (state,msg) (_,_,w) = (M.insert w Absent state, msg ++ c_k ++ [w])
 
 main = do
     putStrLn "input secret word:"
@@ -80,9 +88,9 @@ main = do
     --
     let solve s = do
             let (ans, answers) = guess words s
-            let s2 = update s secret ans
+            let (s2, msg) = update s secret ans
             let status = if ans == fst (guess words s2) then "answer" else "trying"
-            putStrLn $ status ++ ": " ++ ans ++ " " ++
+            putStrLn $ status ++ ": " ++ msg ++ " " ++
                 if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
                 else show $ map nub $ transpose answers
             if status == "answer" then return () else solve s2
