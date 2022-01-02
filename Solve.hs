@@ -89,6 +89,11 @@ update state secret word = finalize $ foldl checkletter (state,"") $ zip3 [0..] 
                               n = length word - 1
                     promote x = x
 
+-- TODO: debug 'sentimentalisms' non termination
+-- it's also obviously a case where 3 helps instead of 2
+-- but the actual problem is that 'e' is green elsewhere in the world,
+-- so the knowledge of it yellow in 2nd to last place doesn't get to contribute to progress
+-- you probably don't have to fully solve the duplicate-letters problem to fix this
 main = do
     putStrLn "input secret word:"
     (secret:feedback) <- lines <$> getContents
@@ -105,6 +110,7 @@ main = do
             putStrLn $ status ++ ": " ++ msg ++ " " ++
                 if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
                 else show $ map nub $ transpose answers
+            when (status == "solved" && ans /= secret) $ error "shit, i got stuck"
             if status == "solved" then return () else solve s2
     solve M.empty
 
