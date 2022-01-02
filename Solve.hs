@@ -1,8 +1,10 @@
 import Control.Arrow
+import Control.Concurrent
 import Control.Monad
 import qualified Data.Map as M
 import Data.Char
 import Data.List
+import Data.List.Split
 import Data.Maybe
 import Data.Ord
 import GHC.IO.Exception
@@ -125,10 +127,35 @@ main = do
             if status == "solved" then return () else solve s2
     solve M.empty
 
--- terrible IPC code begins here
+-- terrible IPC code to the browser begins here
 
 shellcommand cmd = do
     (_, Just stdout_h, _, ph) <- createProcess $ (shell cmd) { std_out = CreatePipe }
     code <- waitForProcess ph
     when (code /= ExitSuccess) $ error $ "command '" ++ cmd ++ "' failed: " ++ show code
-    return $ hGetContents stdout_h
+    hGetContents stdout_h
+
+backoffuntil = backoffuntil' 5 500 -- initial millis; max millis
+backoffuntil' millis maxmillis f cmd = do
+    output <- shellcommand cmd
+    if f output then return output
+    else do
+        -- TODO comment this out
+        putStrLn $ cmd ++ ": waiting for expected output (" ++ show millis ++ "ms)"
+        threadDelay (millis * 1000);
+        backoffuntil' (min maxmillis $ millis * 2) maxmillis f cmd
+
+parsewordlength :: String -> Maybe Int
+parsewordlength html = fmap (read . head) $ find isletters $ map words $ splitOn "<p>" html
+    where isletters (_:str:_) = take 7 str == "letters"
+          isletters _ = False
+
+parserowresults :: Int -> String -> Maybe (String, [Int])
+parserowresults n html = parserow <$> nthrow (splitOn "<div class=\"Row Row-locked-in\">" html)
+    where nthrow rows | length rows < n+2 = Nothing
+          nthrow rows = Just $ rows !! (n+1) -- first elem will always be headers junk
+          parserow row = unzip $ map (parsecol . splitOn ">") $ takeWhile (not . null) $ splitOn "</div>" row
+          parsecol ["<div class=\"Row-letter letter-absent\"",[c]] = (c,0)
+          parsecol ["<div class=\"Row-letter letter-elsewhere\"",[c]] = (c,1)
+          parsecol ["<div class=\"Row-letter letter-correct\"",[c]] = (c,2)
+          parsecol col = error $ "unexpected parse: " ++ concat col
