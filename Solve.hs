@@ -10,8 +10,9 @@ wordlist = "dictionary.txt"
 
 -- TODO: account for when there are multiple of a letter, so At and NotAt state are both relevant
 data LetterState = Absent | NotAt [Int] | At [Int] deriving (Eq, Show)
+type Knowledge = M.Map Char LetterState
 
-guess :: [String] -> M.Map Char LetterState -> (String, [String])
+guess :: [String] -> Knowledge -> (String, [String])
 guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ filter possible1 words
     where query c = (c, M.lookup c state)
           knownletters = M.keys $ M.filter (/= Absent) state
@@ -68,18 +69,19 @@ c_k = "\27[01;31m"
 -- like q -> u
 -- then again maybe too niche to be worth the LOC
 
--- TODO: rewrite this to interact with the website with just colors
--- TODO: foldl collect a string of colors and pretty print them
-update state secret word = finalize $ foldl checkletter (state,"") $ zip3 [0..] secret word
-    -- TODO: consume letters in 'secret' when computing yellows (not that it matters here?)
-    where checkletter (state,msg) (i,s,w) | s == w = (M.alter mkgreen w state, msg ++ c_g ++ [w])
+-- checker's return value shall be 0 for red, 1 for yellow, 2 for green
+-- TODO: allow checker to be stateful (ie consume duplicate letters) when computing yellows
+update :: Knowledge -> (Int -> Char -> Int) -> String -> (Knowledge, String)
+update state checker word = finalize $ foldl checkletter (state,"") $ zip [0..] word
+    where checkletter x (i,w) = checkletter' x (i, w, checker i w)
+          checkletter' (state,msg) (i,w,2) = (M.alter mkgreen w state, msg ++ c_g ++ [w])
               where mkgreen (Just (At l)) = Just $ At $ nub $ sort $ i:l
                     mkgreen _ = Just $ At [i]
-          checkletter (state,msg) (i,_,w) | elem w secret = (M.alter mkyellow w state, msg ++ c_y ++ [w])
+          checkletter' (state,msg) (i,w,1) = (M.alter mkyellow w state, msg ++ c_y ++ [w])
               where mkyellow (Just (At l)) = Just $ At l -- don't downgrade better info
                     mkyellow (Just (NotAt l)) = Just $ NotAt $ nub $ sort $ i:l
                     mkyellow Nothing = Just $ NotAt [i]
-          checkletter (state,msg) (_,_,w) = (M.insert w Absent state, msg ++ c_k ++ [w])
+          checkletter' (state,msg) (_,w,0) = (M.insert w Absent state, msg ++ c_k ++ [w])
           finalize (state,msg) = (M.map promote state, msg ++ c_x)
               where greens = M.foldr (\x gs -> case x of At l -> l ++ gs; _ -> gs) [] state
                     -- when all but 1 position is yellow (or other green), process of elim it
@@ -88,6 +90,12 @@ update state secret word = finalize $ foldl checkletter (state,"") $ zip3 [0..] 
                         where notats = nub $ l ++ greens
                               n = length word - 1
                     promote x = x
+
+-- ^^^ secret-blind code ^^^  vvv secret-aware code for automatic mode vvv
+
+check secret i w | secret !! i == w = 2
+check secret _ w | elem w secret = 1
+check secret _ _ = 0
 
 -- TODO: debug 'sentimentalisms' non termination
 -- it's also obviously a case where 3 helps instead of 2
@@ -105,7 +113,7 @@ main = do
     --
     let solve s = do
             let (ans, answers) = guess words s
-            let (s2, msg) = update s secret ans
+            let (s2, msg) = update s (check secret) ans
             let status = if ans == fst (guess words s2) then "solved" else "trying"
             putStrLn $ status ++ ": " ++ msg ++ " " ++
                 if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
