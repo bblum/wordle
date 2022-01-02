@@ -5,7 +5,6 @@ import Data.Char
 import Data.List
 import Data.Maybe
 import Data.Ord
-import Debug.Trace
 
 wordlist = "/usr/share/dict/words"
 
@@ -29,13 +28,13 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
           guess' answers | length answers <= 2 = (last $ sortOn (length . nub) answers, answers)
           guess' answers = (maximumBy (comparing info) words, answers)
               -- TODO: account for when there are multiple yellow results for a single letter
-              -- TODO: when 'state' has as many entries as the length of the word, stop unknowns
+              -- TODO: try this sorting order instead, see which does better
+              -- info word = ((1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
               where info word = (cols, (1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
-                    -- TODO: try this sorting order instead, see which does better
-                    -- info word = ((1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
                         where cols = count unknowncol $ zip word $ map nub $ transpose answers
                               yellowsmoved = count yellowmoved $ zip [0..] $ map query word
-                              unknownsprobed = count unknown $ nub word
+                              unknownsprobed = if doneprobing then 0 else count unknown $ nub word
+                              doneprobing = length knownletters == length word
                               frequencies = sum $ map (fromMaybe 0 . flip lookup freqs) $ nub word
                     unknowncol (c, c2s) = length c2s > 1 && elem c c2s
                     yellowmoved (i, (c, _)) | any othergreen $ M.assocs state = False
@@ -61,7 +60,8 @@ update state secret word = foldl checkletter state $ zip3 [0..] secret word
                     mkgreen _ = Just $ At [i]
           checkletter state (i,_,w) | elem w secret = M.alter mkyellow w state
               where mkyellow (Just (At l)) = Just $ At l -- don't downgrade better info
-                    -- TODO: when you have all but one, promote it to a At
+                    -- when we have all but 1 position yellow, we could promote it to a green
+                    -- but that probably never matters since we solve too fast already
                     mkyellow (Just (NotAt l)) = Just $ NotAt $ nub $ sort $ i:l
                     mkyellow (Just Absent) = error "fuck, letter reappeared 2"
                     mkyellow Nothing = Just $ NotAt [i]
