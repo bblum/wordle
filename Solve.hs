@@ -52,7 +52,7 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
 c_x = "\27[00m"
 c_g = "\27[01;32m"
 c_y = "\27[01;33m"
-c_k = "\27[00;31m"
+c_k = "\27[01;31m"
 
 -- TODO: maybe you can analyze adjacency patterns in the dictionary to rule stuff out
 -- like q -> u
@@ -64,17 +64,13 @@ update state secret word = fmap (++ c_x) $ foldl checkletter (state,"") $ zip3 [
     -- TODO: consume letters in 'secret' when computing yellows (not that it matters here?)
     where checkletter (state,msg) (i,s,w) | s == w = (M.alter mkgreen w state, msg ++ c_g ++ [w])
               where mkgreen (Just (At l)) = Just $ At $ nub $ sort $ i:l
-                    mkgreen (Just Absent) = error "fuck, letter reappeared 1"
                     mkgreen _ = Just $ At [i]
           checkletter (state,msg) (i,_,w) | elem w secret = (M.alter mkyellow w state, msg ++ c_y ++ [w])
               where mkyellow (Just (At l)) = Just $ At l -- don't downgrade better info
                     -- when we have all but 1 position yellow, we could promote it to a green
                     -- but that probably never matters since we solve too fast already
                     mkyellow (Just (NotAt l)) = Just $ NotAt $ nub $ sort $ i:l
-                    mkyellow (Just Absent) = error "fuck, letter reappeared 2"
                     mkyellow Nothing = Just $ NotAt [i]
-          checkletter (state,msg) (_,_,w) | M.lookup w state == Just Absent = (state, msg ++ c_k ++ [w])
-          checkletter (state,_) (_,_,w) | isJust $ M.lookup w state = error "fuck, letter vanished"
           checkletter (state,msg) (_,_,w) = (M.insert w Absent state, msg ++ c_k ++ [w])
 
 main = do
@@ -82,17 +78,17 @@ main = do
     (secret:feedback) <- lines <$> getContents
     --
     dict <- filter (all isLower) <$> lines <$> readFile wordlist
-    when (not $ elem secret dict) $ error "secret word is too secret for gcc"
+    when (not $ elem secret dict) $ error $ c_k ++ "secret word is too secret for gcc" ++ c_x
     putStrLn $ "secret: " ++ map toUpper secret
     let words = filter ((== length secret) . length) dict
     --
     let solve s = do
             let (ans, answers) = guess words s
             let (s2, msg) = update s secret ans
-            let status = if ans == fst (guess words s2) then "answer" else "trying"
+            let status = if ans == fst (guess words s2) then "solved" else "trying"
             putStrLn $ status ++ ": " ++ msg ++ " " ++
                 if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
                 else show $ map nub $ transpose answers
-            if status == "answer" then return () else solve s2
+            if status == "solved" then return () else solve s2
     solve M.empty
 
