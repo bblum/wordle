@@ -24,16 +24,26 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
           possible2 (i, (_, _)) = True
           --
           guess' [] = error "fuck, puzzle is impossible"
+          -- if there are 2 possibilities, the heuristic will do us no good. just pick one.
+          -- (in fact, it might hurt, since it doesn't necessarily pick from `answers`).
           -- kind of hax, can i do better? is 2 better than, say, 3 here?
+          -- TODO: check with some sort of stress test if there's any place where 3 matters
           guess' answers | length answers <= 2 = (last $ sortOn (length . nub) answers, answers)
           guess' answers = (maximumBy (comparing info) words, answers)
+              -- `info` is the information-gaining heuristic of candidate words to guess
+              -- i prioritize attacking unknown columns first, then (simultaneously) guessing
+              -- already-clued-as-yellow letters in different columns & trying untested letters,
+              -- then finally commonality of untested letters among remaining possible answers.
+              -- the last one one is mostly for the first guess, so i try vowels before Q/X/Z &c.
+              -- the first one is mostly for the last guess, so i lean on process of elim harder.
+              --
               -- TODO: account for when there are multiple yellow results for a single letter
-              -- TODO: try this sorting order instead, see which does better
-              -- info word = ((1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
+              -- TODO: try this sorting order instead, see which does better:
+              --       info word = (cols, yellowsmoved, unknownsprobed, frequencies)
               where info word = (cols, (1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
                         where cols = count unknowncol $ zip word $ map nub $ transpose answers
                               yellowsmoved = count yellowmoved $ zip [0..] $ map query word
-                              -- TODO: check if this actually does anything
+                              -- TODO: check if `doneprobing` actually does anything
                               -- TODO: use a stress test :)
                               -- because i think the 'cols' metric probably subsumes it
                               unknownsprobed = if doneprobing then 0 else count unknown $ nub word
