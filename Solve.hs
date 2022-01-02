@@ -98,9 +98,9 @@ update state checker word = finalize $ foldl checkletter (state,"") $ zip [0..] 
 
 -- ^^^ secret-blind code ^^^  vvv secret-aware code for automatic mode vvv
 
-check secret i w | secret !! i == w = 2
-check secret _ w | elem w secret = 1
-check secret _ _ = 0
+checkknown secret i w | secret !! i == w = 2
+checkknown secret _ w | elem w secret = 1
+checkknown secret _ _ = 0
 
 -- TODO: debug 'sentimentalisms' non termination
 -- it's also obviously a case where 3 helps instead of 2
@@ -118,7 +118,7 @@ main = do
     --
     let solve s = do
             let (ans, answers) = guess words s
-            let (s2, msg) = update s (check secret) ans
+            let (s2, msg) = update s (checkknown secret) ans
             let status = if ans == fst (guess words s2) then "solved" else "trying"
             putStrLn $ status ++ ": " ++ msg ++ " " ++
                 if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
@@ -135,15 +135,16 @@ shellcommand cmd = do
     when (code /= ExitSuccess) $ error $ "command '" ++ cmd ++ "' failed: " ++ show code
     hGetContents stdout_h
 
-backoffuntil = backoffuntil' 5 500 -- initial millis; max millis
-backoffuntil' millis maxmillis f cmd = do
+withbackoff :: (String -> Maybe a) -> String -> IO a
+withbackoff = withbackoff' 5 500 -- initial millis; max millis
+withbackoff' millis maxmillis f cmd = do
     output <- shellcommand cmd
-    if f output then return output
-    else do
-        -- TODO comment this out
-        putStrLn $ cmd ++ ": waiting for expected output (" ++ show millis ++ "ms)"
-        threadDelay (millis * 1000);
-        backoffuntil' (min maxmillis $ millis * 2) maxmillis f cmd
+    case f output of
+        Just result -> return result
+        Nothing -> do
+            putStrLn $ cmd ++ ": waiting (" ++ show millis ++ "ms)" -- TODO comment this out
+            threadDelay (millis * 1000);
+            withbackoff' (min maxmillis $ millis * 2) maxmillis f cmd
 
 parsewordlength :: String -> Maybe Int
 parsewordlength html = fmap (read . head) $ find isletters $ map words $ splitOn "<p>" html
@@ -159,3 +160,36 @@ parserowresults n html = parserow <$> nthrow (splitOn "<div class=\"Row Row-lock
           parsecol ["<div class=\"Row-letter letter-elsewhere\"",[c]] = (c,1)
           parsecol ["<div class=\"Row-letter letter-correct\"",[c]] = (c,2)
           parsecol col = error $ "unexpected parse: " ++ concat col
+
+play dict wordlength = do
+    let words = filter ((== wordlength) . length) dict
+    --
+    let solve s rownum = do
+            let (ans, answers) = guess words s
+            -- TODO: solve race condition if num letters changes here
+            -- maybe: if backoff fails, then send backspaces and start over
+            -- type attempt into the browser
+            putStrLn $ "asdf typing: " ++ ans
+            shellcommand $ "./glue.sh " ++ ans
+            -- read the row feedback from the webpage
+            putStrLn $ "asdf getting result"
+            (parsedans, feedback) <- withbackoff (parserowresults rownum) "pbpaste"
+            putStrLn $ "asdf got result: " ++ show (parsedans, feedback)
+            when (parsedans /= ans) $ error $ "parsed ans different: " ++ ans ++ " " ++ parsedans
+            -- update internal knowledge
+            let (s2, msg) = update s (\i _ -> feedback !! i) ans
+            let status = if ans == fst (guess words s2) then "solved" else "trying"
+            putStrLn $ status ++ ": " ++ msg ++ " " ++
+                if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
+                else show $ map nub $ transpose answers
+            if status == "solved" then return () else solve s2 $ rownum + 1
+    solve M.empty 0
+
+main2 = do
+    dict <- filter (all isLower) <$> lines <$> readFile wordlist
+    -- TODO make this a loop :)
+    wordlength <- withbackoff parsewordlength "pbpaste"
+    putStrLn $ "word length is " ++ show wordlength
+    threadDelay $ 1000 * 1000
+    putStrLn $ "ok going for it"
+    play dict wordlength
