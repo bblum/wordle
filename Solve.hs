@@ -10,6 +10,7 @@ import Data.Ord
 import GHC.IO.Exception
 import GHC.IO.Handle
 import System.Process
+import System.Random.Stateful
 
 wordlist = "dictionary.txt"
 
@@ -17,8 +18,8 @@ wordlist = "dictionary.txt"
 data LetterState = Absent | NotAt [Int] | At [Int] deriving (Eq, Show)
 type Knowledge = M.Map Char LetterState
 
-guess :: [String] -> Knowledge -> (String, [String])
-guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ filter possible1 words
+guess :: Int -> [String] -> Knowledge -> (String, [String])
+guess seed words state = guess' $ filter (all possible2 . zip [0..] . map query) $ filter possible1 words
     where query c = (c, M.lookup c state)
           knownletters = M.keys $ M.filter (/= Absent) state
           possible1 word = length (nub $ word ++ knownletters) <= length word
@@ -35,7 +36,7 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
           -- kind of hax, can i do better? is 2 better than, say, 3 here?
           -- TODO: check with some sort of stress test if there's any place where 3 matters
           guess' answers | length answers <= 2 = (last $ sortOn (length . nub) answers, answers)
-          guess' answers = (maximumBy (comparing info) words, answers)
+          guess' answers = (bestword, answers)
               -- `info` is the information-gaining heuristic of candidate words to guess
               -- i prioritize attacking unknown columns first, then (simultaneously) guessing
               -- already-clued-as-yellow letters in different columns & trying untested letters,
@@ -46,7 +47,7 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
               -- TODO: account for when there are multiple yellow results for a single letter
               -- TODO: try this sorting order instead, see which does better:
               --       info word = (cols, yellowsmoved, unknownsprobed, frequencies)
-              where info word = (cols, (1 + yellowsmoved) * (1 + unknownsprobed), frequencies)
+              where info word = ((cols, (1 + yellowsmoved) * (1 + unknownsprobed)), frequencies)
                         where cols = count unknowncol $ zip word $ map nub $ transpose answers
                               yellowsmoved = count yellowmoved $ zip [0..] $ map query word
                               -- TODO: check if `doneprobing` actually does anything
@@ -64,6 +65,13 @@ guess words state = guess' $ filter (all possible2 . zip [0..] . map query) $ fi
                     freqs = map (head &&& length) $ group $ filter unknown $ sort $ concat answers
                     unknown c = M.notMember c state
                     count f = length . filter f
+                    -- for variety, choose randomly from among the tied best candidates
+                    -- (ignoring the letter frequency metric which is wildly noisy)
+                    -- (only matters to do on the first word though, nexts will deviate anyway)
+                    infowords = reverse $ sortOn snd $ map (\w -> (w, info w)) words
+                    tiedwords = map fst $ takeWhile ((== (fst $ snd $ head infowords)) . fst . snd) infowords
+                    bestword = if M.null state then tiedwords !! (mod seed $ length tiedwords)
+                               else maximumBy (comparing info) words
 
 c_x = "\27[00m"
 c_g = "\27[01;32m"
@@ -112,7 +120,7 @@ withbackoff' millis maxmillis f cmd = do
     case f output of
         Just result -> return result
         Nothing -> do
-            putStrLn $ cmd ++ ": waiting (" ++ show millis ++ "ms)" -- TODO comment this out
+            when (millis == maxmillis) $ putStrLn $ cmd ++ ": waiting (" ++ show millis ++ "ms)"
             threadDelay (millis * 1000);
             withbackoff' (min maxmillis $ millis * 2) maxmillis f cmd
 
@@ -133,8 +141,9 @@ parserowresults n html = parserow <$> nthrow (splitOn "<div class=\"Row Row-lock
 
 playone words wordlength = do
     --
+    seed <- randomIO :: IO Int
     let solve s rownum = do
-            let (ans, answers) = guess words s
+            let (ans, answers) = guess seed words s
             -- TODO: solve race condition if num letters changes here
             -- maybe: if backoff fails, then send backspaces and start over
             -- type attempt into the browser
@@ -144,7 +153,7 @@ playone words wordlength = do
             when (parsedans /= ans) $ error $ "parsed ans different: " ++ ans ++ " " ++ parsedans
             -- update internal knowledge
             let (s2, msg) = update s (\i _ -> feedback !! i) ans
-            let status = if ans == fst (guess words s2) then "solved" else "trying"
+            let status = if ans == fst (guess seed words s2) then "solved" else "trying"
             putStrLn $ status ++ ": " ++ msg ++ " " ++
                 if length answers > 20 then "(" ++ show (length answers) ++ " possibilities)"
                 else show $ map nub $ transpose answers
