@@ -18,6 +18,8 @@ wordlist = "dictionary.txt"
 data LetterState = Absent | NotAt [Int] | At [Int] deriving (Eq, Show)
 type Knowledge = M.Map Char LetterState
 
+-- TODO: filter possible `answers` from `take 20000 commons`, not dictionary!
+-- should narrow things down a bunch, like, a BUNCH, maybe
 guess :: Int -> [String] -> Knowledge -> (String, [String])
 guess seed words state = guess' $ filter (all possible2 . zip [0..] . map query) $ filter possible1 words
     where query c = (c, M.lookup c state)
